@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تحكم الغرفة الذكية</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
+        body { font-family: 'Cairo', sans-serif; }
+        .glass {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+    </style>
+</head>
+
+<body class="bg-gradient-to-br from-blue-500 to-cyan-300 min-h-screen flex items-center justify-center p-4">
+
+    <div class="glass w-full max-w-md p-6 relative">
+
+        <!-- STATUS -->
+        <div id="statusDot" class="absolute top-4 left-4 w-3 h-3 rounded-full bg-red-500 animate-pulse"></div>
+        <div id="statusText" class="absolute top-4 left-8 text-xs text-gray-500">غير متصل</div>
+
+        <h1 class="text-2xl font-bold text-center text-gray-800 mb-6">
+            <i class="fas fa-home text-blue-600 ml-2"></i>نظام التحكم الذكي
+        </h1>
+
+        <!-- AUTO / MANUAL SWITCH -->
+        <div class="flex items-center justify-center mb-6">
+            <span class="mx-2 text-sm font-bold text-gray-600">يدوي</span>
+            
+            <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="modeSwitch" class="sr-only peer" checked>
+                <div class="w-14 h-7 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:bg-blue-600
+                            after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white 
+                            after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 
+                            after:transition-all peer-checked:after:translate-x-full">
+                </div>
+            </label>
+
+            <span class="mx-2 text-sm font-bold text-gray-600">تلقائي</span>
+        </div>
+
+        <!-- SENSOR DATA -->
+        <div class="grid grid-cols-2 gap-4 mb-8">
+            <div class="bg-blue-50 rounded-xl p-4 text-center border-b-4 border-blue-400 shadow-sm">
+                <i class="fas fa-thermometer-half text-3xl text-blue-500 mb-2"></i>
+                <div class="text-gray-500 text-sm">درجة الحرارة</div>
+                <div class="text-2xl font-bold text-gray-800"><span id="tempVal">--</span>°C</div>
+            </div>
+
+            <div class="bg-green-50 rounded-xl p-4 text-center border-b-4 border-green-400 shadow-sm">
+                <i class="fas fa-tint text-3xl text-green-500 mb-2"></i>
+                <div class="text-gray-500 text-sm">الرطوبة</div>
+                <div class="text-2xl font-bold text-gray-800"><span id="humVal">--</span>%</div>
+            </div>
+        </div>
+
+        <h2 class="text-lg font-bold text-gray-700 mb-4 border-r-4 border-blue-500 pr-2">لوحة التحكم</h2>
+
+        <!-- MANUAL BUTTONS -->
+        <div class="space-y-3">
+            <button onclick="manualControl(0)" id="btn0" class="control-btn bg-gray-100">
+                <div class="flex items-center">
+                    <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center ml-3 text-red-500">
+                        <i class="fas fa-power-off"></i>
+                    </div>
+                    <div class="text-right">
+                        <div class="font-bold text-gray-700">إيقاف النظام</div>
+                        <div class="text-xs text-gray-500">إغلاق النافذة والمروحة</div>
+                    </div>
+                </div>
+                <i class="fas fa-check-circle text-gray-300 status-icon"></i>
+            </button>
+
+            <button onclick="manualControl(1)" id="btn1" class="control-btn bg-gray-100">
+                <div class="flex items-center">
+                    <div class="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center ml-3 text-yellow-600">
+                        <i class="fas fa-window-maximize"></i>
+                    </div>
+                    <div class="text-right">
+                        <div class="font-bold text-gray-700">فتح النافذة فقط</div>
+                        <div class="text-xs text-gray-500">تهوية طبيعية</div>
+                    </div>
+                </div>
+                <i class="fas fa-check-circle text-gray-300 status-icon"></i>
+            </button>
+
+            <button onclick="manualControl(2)" id="btn2" class="control-btn bg-gray-100">
+                <div class="flex items-center">
+                    <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center ml-3 text-blue-600">
+                        <i class="fas fa-fan fa-spin"></i>
+                    </div>
+                    <div class="text-right">
+                        <div class="font-bold text-gray-700">تبريد كامل</div>
+                        <div class="text-xs text-gray-500">فتح النافذة + تشغيل المروحة</div>
+                    </div>
+                </div>
+                <i class="fas fa-check-circle text-gray-300 status-icon"></i>
+            </button>
+        </div>
+
+        <div class="mt-6 text-center text-xs text-gray-400">
+            متصل عبر: broker.hivemq.com (WebSockets)
+        </div>
+
+    </div>
+
+<script>
+    const mqttHost = "broker.hivemq.com";
+    const mqttPort = 8000;
+    const clientID = "WebClient_" + Math.random().toString(16).substr(2, 8);
+
+    const tempTopic = "project/room/temperature";
+    const humTopic  = "project/room/humidity";
+    const cmdTopic  = "project/room/command";
+
+    // MODE SWITCH (Auto / Manual)
+    let isAuto = true;
+    document.getElementById("modeSwitch").addEventListener("change", function () {
+        isAuto = this.checked;
+        console.log("Mode =", isAuto ? "Auto" : "Manual");
+    });
+
+    let client = new Paho.MQTT.Client(mqttHost, mqttPort, clientID);
+    let lastSentCommand = -1;
+
+    const options = {
+        onSuccess: onConnect,
+        onFailure: onFail,
+        keepAliveInterval: 30
+    };
+
+    client.onConnectionLost = onConnectionLost;
+    client.onMessageArrived = onMessageArrived;
+
+    connectMQTT();
+
+    function connectMQTT() {
+        document.getElementById("statusText").innerText = "جاري الاتصال...";
+        client.connect(options);
+    }
+
+    function onConnect() {
+        document.getElementById("statusDot").classList.replace("bg-red-500", "bg-green-500");
+        document.getElementById("statusText").innerText = "متصل";
+
+        client.subscribe(tempTopic);
+        client.subscribe(humTopic);
+    }
+
+    function onFail() {
+        document.getElementById("statusText").innerText = "فشل الاتصال";
+        setTimeout(connectMQTT, 5000);
+    }
+
+    function onConnectionLost() {
+        document.getElementById("statusDot").classList.replace("bg-green-500", "bg-red-500");
+        document.getElementById("statusText").innerText = "انقطع الاتصال";
+        setTimeout(connectMQTT, 5000);
+    }
+
+    // MESSAGE HANDLER
+    function onMessageArrived(message) {
+        const topic = message.destinationName;
+        const value = parseFloat(message.payloadString);
+
+        if (topic === tempTopic) {
+            document.getElementById("tempVal").innerText = value;
+
+            if (isAuto) {
+                let cmd = -1;
+
+                if (value > 30) cmd = 2;
+                else if (value >= 29) cmd = 1;
+                else cmd = 0;
+
+                if (cmd !== lastSentCommand) {
+                    sendCommand(cmd);
+                    lastSentCommand = cmd;
+                }
+            }
+        }
+
+        if (topic === humTopic) {
+            document.getElementById("humVal").innerText = value;
+        }
+    }
+
+    // MANUAL MODE
+    function manualControl(cmd) {
+        if (!isAuto) {
+            lastSentCommand = cmd;
+            sendCommand(cmd);
+        } else {
+            alert("قم بتحويل الوضع إلى يدوي أولاً!");
+        }
+    }
+
+    function sendCommand(cmd) {
+        if (!client.isConnected()) {
+            alert("غير متصل بالسيرفر!");
+            return;
+        }
+
+        let msg = new Paho.MQTT.Message(cmd.toString());
+        msg.destinationName = cmdTopic;
+        client.send(msg);
+
+        updateActiveButton(cmd);
+    }
+
+    function updateActiveButton(activeCmd) {
+        [0, 1, 2].forEach(id => {
+            const btn = document.getElementById(`btn${id}`);
+            const icon = btn.querySelector('.status-icon');
+
+            btn.classList.remove("border-blue-500", "bg-white", "shadow-md");
+            btn.classList.add("bg-gray-100", "border-transparent");
+
+            icon.classList.remove("text-blue-500");
+            icon.classList.add("text-gray-300");
+        });
+
+        const activeBtn = document.getElementById(`btn${activeCmd}`);
+        const activeIcon = activeBtn.querySelector('.status-icon');
+
+        activeBtn.classList.add("border-blue-500", "bg-white", "shadow-md");
+        activeIcon.classList.add("text-blue-500");
+    }
+</script>
+
+</body>
+</html>

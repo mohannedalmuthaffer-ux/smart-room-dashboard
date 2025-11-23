@@ -4,9 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>تحكم الغرفة الذكية</title>
+    
+    <!-- MQTT WebSockets Secure -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Icons -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
         body { font-family: 'Cairo', sans-serif; }
@@ -14,8 +21,17 @@
             background: rgba(255, 255, 255, 0.9);
             backdrop-filter: blur(10px);
             border-radius: 16px;
-            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 4px 30px rgba(0,0,0,0.1);
+        }
+        .control-btn {
+            width: 100%;
+            padding: 1rem;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: 0.3s;
+            border: 2px solid transparent;
         }
     </style>
 </head>
@@ -35,13 +51,13 @@
         <!-- AUTO / MANUAL SWITCH -->
         <div class="flex items-center justify-center mb-6">
             <span class="mx-2 text-sm font-bold text-gray-600">يدوي</span>
-            
+
             <label class="relative inline-flex items-center cursor-pointer">
                 <input type="checkbox" id="modeSwitch" class="sr-only peer" checked>
-                <div class="w-14 h-7 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:bg-blue-600
-                            after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white 
-                            after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 
-                            after:transition-all peer-checked:after:translate-x-full">
+                <div class="w-14 h-7 bg-gray-300 rounded-full peer peer-checked:bg-blue-600
+                            after:content-[''] after:absolute after:top-0.5 after:left-[4px]
+                            after:bg-white after:border-gray-300 after:border after:rounded-full
+                            after:h-6 after:w-6 after:transition-all peer-checked:after:translate-x-full">
                 </div>
             </label>
 
@@ -65,7 +81,7 @@
 
         <h2 class="text-lg font-bold text-gray-700 mb-4 border-r-4 border-blue-500 pr-2">لوحة التحكم</h2>
 
-        <!-- MANUAL BUTTONS -->
+        <!-- BUTTONS -->
         <div class="space-y-3">
             <button onclick="manualControl(0)" id="btn0" class="control-btn bg-gray-100">
                 <div class="flex items-center">
@@ -108,31 +124,33 @@
         </div>
 
         <div class="mt-6 text-center text-xs text-gray-400">
-            متصل عبر: broker.hivemq.com (WebSockets)
+            متصل عبر: WSS Secure MQTT – broker.emqx.io
         </div>
 
     </div>
 
 <script>
-    const mqttHost = "broker.hivemq.com";
-    const mqttPort = 8000;
+    // WSS MQTT CONFIG (Secure)
+    const mqttHost = "broker.emqx.io";
+    const mqttPort = 8084;
+    const mqttPath = "/mqtt"; // Required for EMQX WSS
     const clientID = "WebClient_" + Math.random().toString(16).substr(2, 8);
 
     const tempTopic = "project/room/temperature";
     const humTopic  = "project/room/humidity";
     const cmdTopic  = "project/room/command";
 
-    // MODE SWITCH (Auto / Manual)
     let isAuto = true;
-    document.getElementById("modeSwitch").addEventListener("change", function () {
-        isAuto = this.checked;
-        console.log("Mode =", isAuto ? "Auto" : "Manual");
-    });
-
-    let client = new Paho.MQTT.Client(mqttHost, mqttPort, clientID);
     let lastSentCommand = -1;
 
+    document.getElementById("modeSwitch").addEventListener("change", function () {
+        isAuto = this.checked;
+    });
+
+    let client = new Paho.MQTT.Client(mqttHost, mqttPort, mqttPath, clientID);
+
     const options = {
+        useSSL: true,
         onSuccess: onConnect,
         onFailure: onFail,
         keepAliveInterval: 30
@@ -158,16 +176,15 @@
 
     function onFail() {
         document.getElementById("statusText").innerText = "فشل الاتصال";
-        setTimeout(connectMQTT, 5000);
+        setTimeout(connectMQTT, 4000);
     }
 
     function onConnectionLost() {
         document.getElementById("statusDot").classList.replace("bg-green-500", "bg-red-500");
         document.getElementById("statusText").innerText = "انقطع الاتصال";
-        setTimeout(connectMQTT, 5000);
+        setTimeout(connectMQTT, 4000);
     }
 
-    // MESSAGE HANDLER
     function onMessageArrived(message) {
         const topic = message.destinationName;
         const value = parseFloat(message.payloadString);
@@ -176,12 +193,7 @@
             document.getElementById("tempVal").innerText = value;
 
             if (isAuto) {
-                let cmd = -1;
-
-                if (value > 30) cmd = 2;
-                else if (value >= 29) cmd = 1;
-                else cmd = 0;
-
+                let cmd = value > 30 ? 2 : (value >= 29 ? 1 : 0);
                 if (cmd !== lastSentCommand) {
                     sendCommand(cmd);
                     lastSentCommand = cmd;
@@ -194,7 +206,6 @@
         }
     }
 
-    // MANUAL MODE
     function manualControl(cmd) {
         if (!isAuto) {
             lastSentCommand = cmd;
